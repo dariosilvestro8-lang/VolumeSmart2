@@ -30,6 +30,12 @@ class MainActivity : Activity() {
     }
 
     private fun showHome() {
+        val themeIndex = getPreferences(0)
+            .getInt("theme", 0)
+            .coerceIn(0, colors.lastIndex)
+
+        val selectedColor = colors[themeIndex]
+
         root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(24, 32, 24, 24)
@@ -37,7 +43,7 @@ class MainActivity : Activity() {
                 GradientDrawable.Orientation.TL_BR,
                 intArrayOf(
                     Color.rgb(35, 15, 75),
-                    Color.rgb(105, 35, 155),
+                    selectedColor,
                     Color.rgb(25, 125, 175)
                 )
             )
@@ -75,7 +81,7 @@ class MainActivity : Activity() {
         root.addView(makeButton(
             "+  AGGIUNGI FASCIA",
             Color.WHITE,
-            Color.rgb(75, 35, 130)
+            selectedColor
         ) {
             editSchedule(null)
         })
@@ -88,23 +94,29 @@ class MainActivity : Activity() {
         })
 
         val themeRow = LinearLayout(this)
+
         colors.forEachIndexed { index, color ->
             val swatch = TextView(this).apply {
-                text = "●"
+                text = if (index == themeIndex) "●" else "○"
                 textSize = 27f
                 gravity = Gravity.CENTER
                 setTextColor(color)
                 setPadding(8, 8, 8, 8)
+
                 setOnClickListener {
                     getPreferences(0).edit()
-                        .putInt("theme", index).apply()
+                        .putInt("theme", index)
+                        .apply()
                     showHome()
                 }
             }
-            themeRow.addView(swatch, LinearLayout.LayoutParams(
-                0, 65, 1f
-            ))
+
+            themeRow.addView(
+                swatch,
+                LinearLayout.LayoutParams(0, 65, 1f)
+            )
         }
+
         root.addView(themeRow)
 
         refreshSchedules()
@@ -113,7 +125,7 @@ class MainActivity : Activity() {
     private fun refreshSchedules() {
         scheduleList.removeAllViews()
 
-        val schedules = ScheduleStore.get(this)
+        val schedules = ScheduleStore.getSchedules(this)
 
         if (schedules.isEmpty()) {
             scheduleList.addView(text(
@@ -129,16 +141,12 @@ class MainActivity : Activity() {
             val card = LinearLayout(this).apply {
                 orientation = LinearLayout.VERTICAL
                 setPadding(18, 16, 18, 16)
-                background = rounded(
-                    0x33FFFFFF, 22
-                )
+                background = rounded(0x33FFFFFF, 22)
             }
 
-            val title = text(
+            card.addView(text(
                 item.name, 19, Color.WHITE, true
-            )
-
-            card.addView(title)
+            ))
 
             card.addView(text(
                 "${item.start}  →  ${item.end}",
@@ -160,18 +168,25 @@ class MainActivity : Activity() {
                 text = "MODIFICA"
                 setTextColor(Color.WHITE)
                 setPadding(12, 14, 12, 5)
-                setOnClickListener { editSchedule(item) }
+                setOnClickListener {
+                    editSchedule(item)
+                }
             }
 
             val delete = TextView(this).apply {
                 text = "ELIMINA"
                 setTextColor(0xFFFFB7CF.toInt())
                 setPadding(12, 14, 5, 5)
+
                 setOnClickListener {
-                    val updated = schedules.filterNot {
-                        it.id == item.id
-                    }
-                    ScheduleStore.save(this@MainActivity, updated)
+                    val updated = ScheduleStore.getSchedules(
+                        this@MainActivity
+                    ).filterNot { it.id == item.id }
+
+                    ScheduleStore.saveSchedules(
+                        this@MainActivity, updated
+                    )
+
                     AlarmScheduler.scheduleAll(this@MainActivity)
                     refreshSchedules()
                 }
@@ -181,11 +196,12 @@ class MainActivity : Activity() {
             buttons.addView(delete)
             card.addView(buttons)
 
-            scheduleList.addView(card, LinearLayout.LayoutParams(
-                -1, -2
-            ).apply {
-                bottomMargin = 14
-            })
+            scheduleList.addView(
+                card,
+                LinearLayout.LayoutParams(-1, -2).apply {
+                    bottomMargin = 14
+                }
+            )
         }
     }
 
@@ -233,7 +249,8 @@ class MainActivity : Activity() {
         volume.setOnSeekBarChangeListener(
             object : SeekBar.OnSeekBarChangeListener {
                 override fun onProgressChanged(
-                    seekBar: SeekBar?, progress: Int,
+                    seekBar: SeekBar?,
+                    progress: Int,
                     fromUser: Boolean
                 ) {
                     percentage.text = "$progress%"
@@ -252,13 +269,16 @@ class MainActivity : Activity() {
         val content = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(20, 10, 20, 10)
+
             addView(name)
             addView(startButton)
             addView(endButton)
+
             addView(TextView(this@MainActivity).apply {
                 text = "Volume desiderato"
                 textSize = 15f
             })
+
             addView(percentage)
             addView(volume)
         }
@@ -269,28 +289,33 @@ class MainActivity : Activity() {
             .setNegativeButton("Annulla", null)
             .setPositiveButton("SALVA") { _, _ ->
 
-                val id = existing?.id ?:
-                    ((ScheduleStore.get(this).maxOfOrNull {
+                val currentSchedules =
+                    ScheduleStore.getSchedules(this)
+
+                val id = existing?.id ?: (
+                    (currentSchedules.maxOfOrNull {
                         it.id
-                    } ?: 0) + 1)
+                    } ?: 0) + 1
+                )
 
                 val newSchedule = Schedule(
                     id = id,
                     name = name.text.toString()
-                        .trim().ifEmpty { "La mia fascia" },
+                        .trim()
+                        .ifEmpty { "La mia fascia" },
                     start = start,
                     end = end,
                     volume = volume.progress,
                     enabled = true
                 )
 
-                val updated = ScheduleStore.get(this)
+                val updated = currentSchedules
                     .filterNot { it.id == id }
                     .toMutableList()
 
                 updated.add(newSchedule)
 
-                ScheduleStore.save(this, updated)
+                ScheduleStore.saveSchedules(this, updated)
                 AlarmScheduler.scheduleAll(this)
                 refreshSchedules()
             }
@@ -302,12 +327,15 @@ class MainActivity : Activity() {
         callback: (String) -> Unit
     ) {
         val parts = current.split(":")
+
         TimePickerDialog(
             this,
             { _, hour, minute ->
                 val time = String.format(
                     Locale.getDefault(),
-                    "%02d:%02d", hour, minute
+                    "%02d:%02d",
+                    hour,
+                    minute
                 )
                 callback(time)
             },
@@ -326,7 +354,10 @@ class MainActivity : Activity() {
         text = value
         textSize = size.toFloat()
         setTextColor(color)
-        if (bold) setTypeface(null, Typeface.BOLD)
+
+        if (bold) {
+            setTypeface(null, Typeface.BOLD)
+        }
     }
 
     private fun makeButton(
