@@ -11,6 +11,7 @@ class VolumeAlarmReceiver : BroadcastReceiver() {
         val id = intent.getIntExtra(
             AlarmScheduler.EXTRA_SCHEDULE_ID, -1
         )
+
         val isStart = intent.getBooleanExtra(
             AlarmScheduler.EXTRA_IS_START, false
         )
@@ -24,24 +25,36 @@ class VolumeAlarmReceiver : BroadcastReceiver() {
         val audioManager =
             context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
 
-        val maxVolume = audioManager.getStreamMaxVolume(
-            AudioManager.STREAM_MUSIC
-        )
-
         val percent = if (isStart) {
             schedule.volume
         } else {
             ScheduleStore.getOffVolume(context)
         }
 
-        val volume = (maxVolume * percent / 100f).toInt()
+        fun setVolume(stream: Int) {
+            val maxVolume = audioManager.getStreamMaxVolume(stream)
+            val volume = (maxVolume * percent / 100f).toInt()
 
-        audioManager.setStreamVolume(
-            AudioManager.STREAM_MUSIC,
-            volume,
-            0
-        )
+            audioManager.setStreamVolume(
+                stream,
+                volume,
+                0
+            )
+        }
 
+        // Volume multimedia
+        setVolume(AudioManager.STREAM_MUSIC)
+
+        // Volume suoneria
+        setVolume(AudioManager.STREAM_RING)
+
+        // Volume notifiche
+        setVolume(AudioManager.STREAM_NOTIFICATION)
+
+        // Volume chiamate
+        setVolume(AudioManager.STREAM_VOICE_CALL)
+
+        // Programma il prossimo cambio di volume
         AlarmScheduler.scheduleAlarm(context, schedule, isStart)
     }
 }
